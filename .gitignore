@@ -220,3 +220,12 @@ __marimo__/
 # macOS
 .DS_Store
 
+# ── Project-specific ────────────────────────────────────────────────────────
+# Never commit real uploaded documents
+uploads/
+# Audit / SQLite runtime database (regenerated at startup)
+data/audit.db
+# Old demo folder
+Agentic-RAG-demo/
+# Temp runner file
+tempCodeRunnerFile.py

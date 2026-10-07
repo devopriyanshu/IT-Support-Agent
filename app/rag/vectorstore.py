@@ -130,5 +130,56 @@ def get_retriever():
 
 
 def add_documents(chunks):
+    """Add chunks to the vectorstore using deterministic IDs to prevent duplicates on re-ingest."""
     store = get_vectorstore()
+    ids = [c.metadata.get("doc_id") for c in chunks]
+    # If any chunk lacks a doc_id (e.g. ingested via legacy path), fall back to auto-generated IDs
+    if all(ids):
+        return store.add_documents(chunks, ids=ids)
     return store.add_documents(chunks)
+
+
+def list_indexed_sources() -> list[dict]:
+    """Return a deduplicated list of sources currently indexed in Pinecone.
+    Uses a dummy query vector of zeros to fetch a sample and extract source metadata."""
+    pc = Pinecone(api_key=settings.pinecone_api_key)
+    index = pc.Index(settings.pinecone_index_name)
+    dim = get_embedding_dimension()
+    # Query with zero vector to get a representative sample of vectors
+    result = index.query(
+        vector=[0.0] * dim,
+        top_k=100,
+        include_metadata=True,
+        namespace=settings.pinecone_namespace,
+    )
+    seen, sources = set(), []
+    for match in result.get("matches", []):
+        src = (match.get("metadata") or {}).get("source", "")
+        if src and src not in seen:
+            seen.add(src)
+            sources.append({"source": src, "filename": src.split("/")[-1]})
+    return sources
+
+
+def delete_documents_by_source(filename: str) -> int:
+    """Delete all Pinecone vectors whose 'source' metadata contains the given filename.
+    Returns the number of IDs deleted."""
+    pc = Pinecone(api_key=settings.pinecone_api_key)
+    index = pc.Index(settings.pinecone_index_name)
+    dim = get_embedding_dimension()
+
+    # Fetch a broad sample to find IDs matching this source
+    result = index.query(
+        vector=[0.0] * dim,
+        top_k=10000,
+        include_metadata=True,
+        namespace=settings.pinecone_namespace,
+    )
+    ids_to_delete = [
+        m["id"]
+        for m in result.get("matches", [])
+        if filename in (m.get("metadata") or {}).get("source", "")
+    ]
+    if ids_to_delete:
+        index.delete(ids=ids_to_delete, namespace=settings.pinecone_namespace)
+    return len(ids_to_delete)
