@@ -1,6 +1,6 @@
 import time
-from pinecone import Pinecone , ServerlessSpec
-from langchain_openai import OpenAIEmbeddings
+from pinecone import Pinecone, ServerlessSpec
+from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_pinecone import PineconeVectorStore
 from app.core.config import get_settings
 
@@ -12,6 +12,12 @@ _vectorstore = None
 
 
 EMBEDDING_DIMENSIONS = {
+    "models/gemini-embedding-001": 3072,
+    "gemini-embedding-001": 3072,
+    "models/gemini-embedding-2": 3072,
+    "gemini-embedding-2": 3072,
+    "models/text-embedding-004": 768,
+    "text-embedding-004": 768,
     "text-embedding-3-small": 1536,
     "text-embedding-3-large": 3072,
     "text-embedding-ada-002": 1536,
@@ -28,6 +34,10 @@ def get_embedding_dimension(model_name: str | None = None) -> int:
     normalized = name.lower()
     if normalized in EMBEDDING_DIMENSIONS:
         return EMBEDDING_DIMENSIONS[normalized]
+    if "gemini-embedding" in normalized:
+        return 3072
+    if "text-embedding-004" in normalized or "embedding-001" in normalized:
+        return 768
     if "text-embedding-3-small" in normalized:
         return 1536
     if "text-embedding-3-large" in normalized:
@@ -47,12 +57,20 @@ def get_embedding_dimension(model_name: str | None = None) -> int:
 def get_embeddings():
     global _embeddings
     if _embeddings is None:
-        if not settings.openai_api_key:
-            raise RuntimeError("OPENAI_API_KEY is missing")
-        _embeddings = OpenAIEmbeddings(
-            model=settings.embedding_model,
-            api_key=settings.openai_api_key,
-        )
+        api_key = settings.google_api_key or settings.gemini_api_key
+        if api_key:
+            _embeddings = GoogleGenerativeAIEmbeddings(
+                model=settings.embedding_model,
+                google_api_key=api_key,
+            )
+        elif settings.openai_api_key:
+            from langchain_openai import OpenAIEmbeddings
+            _embeddings = OpenAIEmbeddings(
+                model=settings.embedding_model,
+                api_key=settings.openai_api_key,
+            )
+        else:
+            raise RuntimeError("GOOGLE_API_KEY is missing")
     return _embeddings
 
 
